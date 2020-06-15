@@ -1,14 +1,16 @@
 import boto3
 
-def update_sns_subscriber(file_path:str):
+def update_sns_subscriber(file_path: str):
     # update subscribers on all SNS (all regions) for a given CIO based on a file (simple list of emails)
 
     pass
 
+
 def deploy_monitoring_in_account():
     # List all regions
     client = boto3.client('ec2')
-    regions = [region['RegionName'] for region in client.describe_regions()['Regions']]
+    regions = [region['RegionName']
+               for region in client.describe_regions()['Regions']]
 
     skynet_socle_account_id = '123'
 
@@ -36,9 +38,35 @@ def deploy_monitoring_in_account():
 
         skynet_lambda = []
 
+        # Creating list of error metric for lambda
+        # TODO : handle more than 100 metrics (limit for math expression)
         for lambda in lambda_list['Functions']:
             if lambda['FunctionName'].startswith('skynet'):
-                skynet_lambda += lambda
+                skynet_lambda += {
+                    'Id': lambda['FunctionName'],
+                    'MetricStat': {
+                        'Metric': {
+                            'Namespace': 'AWS/Lambda',
+                            'MetricName': 'Errors',
+                            'Dimensions': [
+                                {
+                                    'Name': 'FunctionName',
+                                    'Value': lambda['FunctionName']
+                                },
+                            ]
+                        },
+                        'Period': 300,
+                        'Stat': 'string',  # To be confirmed
+                        'Unit': 'Count'    # To be confirmed
+                    },
+                }
+
+        # Adding math expression
+        skynet_lambda += {
+                    'Expression': 'SUM(METRICS())',
+                    'Id': 'skynet_lambda_error',
+                    'ReturnData': True
+                }
 
         cloudwatch_client.put_metric_alarm(
             AlarmName=f"skynet_alarm_lambda_error_{cio}_{account_id}_{region}",
@@ -55,28 +83,7 @@ def deploy_monitoring_in_account():
             ComparisonOperator='GreaterThanOrEqualToThreshold',
             TreatMissingData='notBreaching',
             Metrics=[
-                {
-                    'Id': 'string',
-                    'MetricStat': {
-                        'Metric': {
-                            'Namespace': 'string',
-                            'MetricName': 'string',
-                            'Dimensions': [
-                                {
-                                    'Name': 'string',
-                                    'Value': 'string'
-                                },
-                            ]
-                        },
-                        'Period': 123,
-                        'Stat': 'string',
-                        'Unit': 'Count'
-                    },
-                    'Expression': 'SUM(METRICS())',
-                    'Label': 'skynet_lambda_error',
-                    'ReturnData': True,
-                    'Period': 300
-                },
+                skynet_lambda
             ],
             Tags=[
                 {
